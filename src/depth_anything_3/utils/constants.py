@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-DEFAULT_MODEL = "depth-anything/DA3NESTED-GIANT-LARGE"
+DEFAULT_MODEL = "depth-anything/DA3NESTED-GIANT-LARGE-1.1"
 DEFAULT_EXPORT_DIR = "workspace/gallery/scene"
 DEFAULT_GALLERY_DIR = "workspace/gallery"
 DEFAULT_GRADIO_DIR = "workspace/gradio"
