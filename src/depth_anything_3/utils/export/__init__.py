@@ -1,3 +1,11 @@
+'''
+Author: Easonyesheng preacher@sjtu.edu.cn
+Date: 2025-11-25 16:59:22
+LastEditors: Easonyesheng preacher@sjtu.edu.cn
+LastEditTime: 2025-12-20 17:03:29
+FilePath: /research/ref_ray/third_party/DA3/src/depth_anything_3/utils/export/__init__.py
+Description: 
+'''
 # Copyright (c) 2025 ByteDance Ltd. and/or its affiliates
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,6 +19,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+import sys
+sys.path.append("/opt/data/private/3DGS/nerfstudio/research/ref_ray/third_party/DA3/src")
 
 from depth_anything_3.specs import Prediction
 from depth_anything_3.utils.export.gs import export_to_gs_ply, export_to_gs_video

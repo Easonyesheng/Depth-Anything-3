@@ -28,15 +28,16 @@ import torch.nn as nn
 from huggingface_hub import PyTorchModelHubMixin
 from PIL import Image
 
-from depth_anything_3.cfg import create_object, load_config
-from depth_anything_3.registry import MODEL_REGISTRY
-from depth_anything_3.specs import Prediction
-from depth_anything_3.utils.export import export
-from depth_anything_3.utils.geometry import affine_inverse
-from depth_anything_3.utils.io.input_processor import InputProcessor
-from depth_anything_3.utils.io.output_processor import OutputProcessor
-from depth_anything_3.utils.logger import logger
-from depth_anything_3.utils.pose_align import align_poses_umeyama
+
+from .cfg import create_object, load_config
+from .registry import MODEL_REGISTRY
+from .specs import Prediction
+from .utils.export import export
+from .utils.geometry import affine_inverse
+from .utils.io.input_processor import InputProcessor
+from .utils.io.output_processor import OutputProcessor
+from .utils.logger import logger
+from .utils.pose_align import align_poses_umeyama
 
 torch.backends.cudnn.benchmark = False
 # logger.info("CUDNN Benchmark Disabled")
