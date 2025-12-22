@@ -18,7 +18,7 @@ import torch
 import torch.nn as nn
 from addict import Dict
 from omegaconf import DictConfig, OmegaConf
-
+from copy import deepcopy
 from depth_anything_3.cfg import create_object
 from depth_anything_3.model.utils.transform import pose_encoding_to_extri_intri
 from depth_anything_3.utils.alignment import (
@@ -138,6 +138,11 @@ class DepthAnything3Net(nn.Module):
         # Process features through depth head
         with torch.autocast(device_type=x.device.type, enabled=False):
             output = self._process_depth_head(feats, H, W)
+
+            # @Eason save for ray preds
+            ray_pred = deepcopy(output.ray) if 'ray' in output else None
+            assert ray_pred is not None, "Ray not available."
+
             if use_ray_pose:
                 output = self._process_ray_pose_estimation(output, H, W)
             else:
@@ -149,6 +154,9 @@ class DepthAnything3Net(nn.Module):
 
         # Extract auxiliary features if requested
         output.aux = self._extract_auxiliary_features(aux_feats, export_feat_layers, H, W)
+
+        # @Eason add ray preds back
+        output.ray = ray_pred
 
         return output
 

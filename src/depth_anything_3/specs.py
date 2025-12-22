@@ -1,3 +1,4 @@
+
 # Copyright (c) 2025 ByteDance Ltd. and/or its affiliates
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -43,3 +44,5 @@ class Prediction:
     gaussians: Gaussians | None = None  # 3D gaussians
     aux: dict[str, Any] = None  #
     scale_factor: Optional[float] = None  # metric scale
+    # @Eason
+    ray: np.ndarray | None = None  # N, H, W, 6 - predicted rays (dir + ori)
