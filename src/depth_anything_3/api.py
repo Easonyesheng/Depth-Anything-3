@@ -27,7 +27,7 @@ import torch
 import torch.nn as nn
 from huggingface_hub import PyTorchModelHubMixin
 from PIL import Image
-from loguru import logger
+from loguru import logger as uru_logger
 
 from .cfg import create_object, load_config
 from .registry import MODEL_REGISTRY
@@ -355,7 +355,7 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         )
 
         pred_ray = raw_output.get("ray", None)
-        logger.success(f"Predicted ray shape: {pred_ray.shape if pred_ray is not None else None}") 
+        uru_logger.debug(f"Predicted ray shape: {pred_ray.shape if pred_ray is not None else None}") 
 
         # Convert raw output to prediction
         prediction = self._convert_to_prediction(raw_output)
