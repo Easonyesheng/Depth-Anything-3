@@ -281,24 +281,12 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         intrinsics: np.ndarray | None = None,
         align_to_input_ext_scale: bool = True,
         infer_gs: bool = False,
-        use_ray_pose: bool = False,
+        use_ray_pose: bool = True,
         ref_view_strategy: str = "saddle_balanced",
-        render_exts: np.ndarray | None = None,
-        render_ixts: np.ndarray | None = None,
-        render_hw: tuple[int, int] | None = None,
         process_res: int = 504,
         process_res_method: str = "upper_bound_resize",
-        export_dir: str | None = None,
         export_format: str = "mini_npz",
         export_feat_layers: Sequence[int] | None = None,
-        # GLB export parameters
-        conf_thresh_percentile: float = 40.0,
-        num_max_points: int = 1_000_000,
-        show_cameras: bool = True,
-        # Feat_vis export parameters
-        feat_vis_fps: int = 15,
-        # Other export parameters, e.g., gs_ply, gs_video
-        export_kwargs: Optional[dict] = {},
     ) -> Prediction:
         """
         Run inference on input images.
@@ -355,11 +343,20 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         )
 
         pred_ray = raw_output.get("ray", None)
+        pred_ray_conf = raw_output.get("ray_conf", None)
         uru_logger.debug(f"Predicted ray shape: {pred_ray.shape if pred_ray is not None else None}") 
+        uru_logger.debug(f"Predicted ray_conf shape: {pred_ray_conf.shape if pred_ray_conf is not None else None}")
 
         # Convert raw output to prediction
         prediction = self._convert_to_prediction(raw_output)
+
+        # Align prediction to extrinsincs
+        prediction = self._align_to_input_extrinsics_intrinsics(
+            extrinsics, intrinsics, prediction, align_to_input_ext_scale
+        )
+
         prediction.ray = pred_ray.cpu().numpy() if pred_ray is not None else None
+        prediction.ray_conf = pred_ray_conf.cpu().numpy() if pred_ray_conf is not None else None
         
         return prediction
 
@@ -450,10 +447,16 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
             random_state=42,
         )
         if align_to_input_ext_scale:
-            prediction.extrinsics = extrinsics[..., :3, :].numpy()
+            # should only align the scale of extrinsics
+            pred_extrinsics = prediction.extrinsics.copy()
+            pred_extrinsics[:, :3, 3] /= scale
+            prediction.extrinsics = pred_extrinsics
+            
             prediction.depth /= scale
         else:
-            prediction.extrinsics = aligned_extrinsics
+            # prediction.extrinsics = aligned_extrinsics
+            pass
+
         return prediction
 
     def _run_model_forward(

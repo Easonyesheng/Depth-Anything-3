@@ -142,6 +142,7 @@ class DepthAnything3Net(nn.Module):
             # @Eason save for ray preds
             ray_pred = deepcopy(output.ray) if 'ray' in output else None
             assert ray_pred is not None, "Ray not available."
+            ray_conf = deepcopy(output.ray_conf) if 'ray_conf' in output else None
 
             if use_ray_pose:
                 output = self._process_ray_pose_estimation(output, H, W)
@@ -157,6 +158,7 @@ class DepthAnything3Net(nn.Module):
 
         # @Eason add ray preds back
         output.ray = ray_pred
+        output.ray_conf = ray_conf
 
         return output
 

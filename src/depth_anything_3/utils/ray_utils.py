@@ -490,7 +490,7 @@ def camray_to_caminfo(camray, confidence=None, reproj_threshold=0.2, training=Fa
         n_iter=n_iter,
         num_sample_for_ransac=num_sample_for_ransac,
         rand_sample_iters_idx=rand_sample_iters_idx,
-    )
+    ) # cam2world rotation ?
 
     T = torch.sum(camray[:, :, 3:] * confidence.unsqueeze(-1), dim=1) / torch.sum(
         confidence, dim=-1, keepdim=True
