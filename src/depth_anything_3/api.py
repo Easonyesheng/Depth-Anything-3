@@ -274,6 +274,76 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         return prediction
 
     # @Eason
+    def inference_feat(
+        self,
+        image: list[np.ndarray | Image.Image | str],
+        extrinsics: np.ndarray | None = None,
+        intrinsics: np.ndarray | None = None,
+        infer_gs: bool = False,
+        use_ray_pose: bool = True,
+        ref_view_strategy: str = "saddle_balanced",
+        process_res: int = 504,
+        process_res_method: str = "upper_bound_resize",
+        export_format: str = "mini_npz",
+        export_feat_layers: Sequence[int] | None = None,
+    ):
+        """
+        Run inference on input images.
+
+        Args:
+            image: List of input images (numpy arrays, PIL Images, or file paths)
+            extrinsics: Camera extrinsics (N, 4, 4)
+            intrinsics: Camera intrinsics (N, 3, 3)
+            align_to_input_ext_scale: whether to align the input pose scale to the prediction
+            infer_gs: Enable the 3D Gaussian branch (needed for `gs_ply`/`gs_video` exports)
+            use_ray_pose: Use ray-based pose estimation instead of camera decoder (default: False)
+            ref_view_strategy: Strategy for selecting reference view from multiple views.
+                Options: "first", "middle", "saddle_balanced", "saddle_sim_range".
+                Default: "saddle_balanced". For single view input (S ≤ 2), no reordering is performed.
+            render_exts: Optional render extrinsics for Gaussian video export
+            render_ixts: Optional render intrinsics for Gaussian video export
+            render_hw: Optional render resolution for Gaussian video export
+            process_res: Processing resolution
+            process_res_method: Resize method for processing
+            export_dir: Directory to export results
+            export_format: Export format (mini_npz, npz, glb, ply, gs, gs_video)
+            export_feat_layers: Layer indices to export intermediate features from
+            conf_thresh_percentile: [GLB] Lower percentile for adaptive confidence threshold (default: 40.0) # noqa: E501
+            num_max_points: [GLB] Maximum number of points in the point cloud (default: 1,000,000)
+            show_cameras: [GLB] Show camera wireframes in the exported scene (default: True)
+            feat_vis_fps: [FEAT_VIS] Frame rate for output video (default: 15)
+            export_kwargs: additional arguments to export functions.
+
+        Returns:
+            Prediction object containing depth maps and camera parameters
+        """
+        if "gs" in export_format:
+            assert infer_gs, "must set `infer_gs=True` to perform gs-related export."
+
+        if "colmap" in export_format:
+            assert isinstance(image[0], str), "`image` must be image paths for COLMAP export."
+
+        # Preprocess images
+        imgs_cpu, extrinsics, intrinsics = self._preprocess_inputs(
+            image, extrinsics, intrinsics, process_res, process_res_method
+        )
+
+        # Prepare tensors for model
+        imgs, ex_t, in_t = self._prepare_model_inputs(imgs_cpu, extrinsics, intrinsics)
+
+        # Normalize extrinsics
+        ex_t_norm = self._normalize_extrinsics(ex_t.clone() if ex_t is not None else None)
+
+        # Run model forward pass
+        export_feat_layers = list(export_feat_layers) if export_feat_layers is not None else []
+
+        raw_output = self._run_model_forward(
+            imgs, ex_t_norm, in_t, export_feat_layers, infer_gs, use_ray_pose, ref_view_strategy
+        )
+
+        return raw_output
+
+    # @Eason
     def inference_ray(
         self,
         image: list[np.ndarray | Image.Image | str],

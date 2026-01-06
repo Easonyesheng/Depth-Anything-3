@@ -52,11 +52,29 @@ def as_homogeneous(ext):
 
 
 @torch.jit.script
-def affine_inverse(A: torch.Tensor):
+def affine_inverse(A: torch.Tensor, pt3d: bool = False):
+
     R = A[..., :3, :3]  # ..., 3, 3
+    
+    # if pt3d:
+    #     R = R.mT
+
     T = A[..., :3, 3:]  # ..., 3, 1
     P = A[..., 3:, :]  # ..., 1, 4
-    return torch.cat([torch.cat([R.mT, -R.mT @ T], dim=-1), P], dim=-2)
+    if pt3d:
+        out = torch.cat([torch.cat([R.mT, -R @ T], dim=-1), P], dim=-2)
+    else:
+        out = torch.cat([torch.cat([R.mT, -R.mT @ T], dim=-1), P], dim=-2)
+
+
+    # if pt3d:
+    #     out_R = out[..., :3, :3]
+    #     out_R = out_R.mT
+    #     out = torch.cat([torch.cat([out_R, out[..., :3, 3:]], dim=-1), out[..., 3:, :]], dim=-2)
+    
+    return out
+
+
 
 
 def transpose_last_two_axes(arr):
@@ -71,18 +89,28 @@ def transpose_last_two_axes(arr):
     return arr.transpose(axes)
 
 
-def affine_inverse_np(A: np.ndarray):
+def affine_inverse_np(A: np.ndarray, pt3d=False):
     R = A[..., :3, :3]
     T = A[..., :3, 3:]
     P = A[..., 3:, :]
-    return np.concatenate(
-        [
-            np.concatenate([transpose_last_two_axes(R), -transpose_last_two_axes(R) @ T], axis=-1),
-            P,
-        ],
-        axis=-2,
-    )
+    if pt3d:
+        out = np.concatenate(
+            [
+                np.concatenate([transpose_last_two_axes(R), -R @ T], axis=-1),
+                P,
+            ],
+            axis=-2,
+        )
+    else:
+        out = np.concatenate(
+            [
+                np.concatenate([transpose_last_two_axes(R), -transpose_last_two_axes(R) @ T], axis=-1),
+                P,
+            ],
+            axis=-2,
+        )
 
+    return out
 
 def quat_to_mat(quaternions: torch.Tensor) -> torch.Tensor:
     """

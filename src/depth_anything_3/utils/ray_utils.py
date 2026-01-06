@@ -497,18 +497,19 @@ def camray_to_caminfo(camray, confidence=None, reproj_threshold=0.2, training=Fa
     )
 
     R = R.reshape(B, S, 3, 3)
+    # R = R.transpose(-1, -2)  # Invert rotation to get rotation performed on column vectors
     T = T.reshape(B, S, 3)
     focal_lengths = focal_lengths.reshape(B, S, 2)
     principal_points = principal_points.reshape(B, S, 2)
 
     return R, T, 1.0 / focal_lengths, principal_points + 1.0
 
-def get_extrinsic_from_camray(camray, conf, patch_size_y, patch_size_x, training=False):
+def get_pose_from_camray(camray, conf, patch_size_y, patch_size_x, training=False):
     pred_R, pred_T, pred_focal_lengths, pred_principal_points = camray_to_caminfo(
         camray, confidence=conf.squeeze(-1), training=training
     )
 
-    pred_extrinsic = torch.cat(
+    pred_pose = torch.cat(
         [
             torch.cat([pred_R, pred_T.unsqueeze(-1)], dim=-1),
             repeat(
@@ -520,4 +521,4 @@ def get_extrinsic_from_camray(camray, conf, patch_size_y, patch_size_x, training
         ],
         dim=-2,
     )  # B, S, 4, 4
-    return pred_extrinsic, pred_focal_lengths, pred_principal_points
+    return pred_pose, pred_focal_lengths, pred_principal_points
