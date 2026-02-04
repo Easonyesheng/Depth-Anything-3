@@ -107,6 +107,7 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         infer_gs: bool = False,
         use_ray_pose: bool = False,
         ref_view_strategy: str = "saddle_balanced",
+        save_specificity_opts: dict | None = None,
     ) -> dict[str, torch.Tensor]:
         """
         Forward pass through the model.
@@ -128,7 +129,7 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         with torch.no_grad():
             with torch.autocast(device_type=image.device.type, dtype=autocast_dtype):
                 return self.model(
-                    image, extrinsics, intrinsics, export_feat_layers, infer_gs, use_ray_pose, ref_view_strategy
+                    image, extrinsics, intrinsics, export_feat_layers, infer_gs, use_ray_pose, ref_view_strategy, save_specificity_opts
                 )
 
     def inference(
@@ -148,6 +149,7 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         export_dir: str | None = None,
         export_format: str = "mini_npz",
         export_feat_layers: Sequence[int] | None = None,
+        save_specificity_opts: dict | None = None,
         # GLB export parameters
         conf_thresh_percentile: float = 40.0,
         num_max_points: int = 1_000_000,
@@ -208,7 +210,7 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         export_feat_layers = list(export_feat_layers) if export_feat_layers is not None else []
 
         raw_output = self._run_model_forward(
-            imgs, ex_t_norm, in_t, export_feat_layers, infer_gs, use_ray_pose, ref_view_strategy
+            imgs, ex_t_norm, in_t, export_feat_layers, infer_gs, use_ray_pose, ref_view_strategy, save_specificity_opts
         )
 
         # Convert raw output to prediction
@@ -281,10 +283,11 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         intrinsics: np.ndarray | None = None,
         infer_gs: bool = False,
         use_ray_pose: bool = True,
-        ref_view_strategy: str = "saddle_balanced",
+        ref_view_strategy: str = "first",
         process_res: int = 504,
         process_res_method: str = "upper_bound_resize",
         export_format: str = "mini_npz",
+        save_specificity_opts: dict | None = None,
         export_feat_layers: Sequence[int] | None = None,
     ):
         """
@@ -338,7 +341,7 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         export_feat_layers = list(export_feat_layers) if export_feat_layers is not None else []
 
         raw_output = self._run_model_forward(
-            imgs, ex_t_norm, in_t, export_feat_layers, infer_gs, use_ray_pose, ref_view_strategy
+            imgs, ex_t_norm, in_t, export_feat_layers, infer_gs, use_ray_pose, ref_view_strategy, save_specificity_opts
         )
 
         return raw_output
@@ -356,6 +359,7 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         process_res: int = 504,
         process_res_method: str = "upper_bound_resize",
         export_format: str = "mini_npz",
+        save_specificity_opts: dict | None = None,
         export_feat_layers: Sequence[int] | None = None,
     ) -> Prediction:
         """
@@ -407,11 +411,9 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
 
         # Run model forward pass
         export_feat_layers = list(export_feat_layers) if export_feat_layers is not None else []
-
         raw_output = self._run_model_forward(
-            imgs, ex_t_norm, in_t, export_feat_layers, infer_gs, use_ray_pose, ref_view_strategy
+            imgs, ex_t_norm, in_t, export_feat_layers, infer_gs, use_ray_pose, ref_view_strategy, save_specificity_opts
         )
-
         pred_ray = raw_output.get("ray", None)
         pred_ray_conf = raw_output.get("ray_conf", None)
         uru_logger.debug(f"Predicted ray shape: {pred_ray.shape if pred_ray is not None else None}") 
@@ -538,6 +540,7 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
         infer_gs: bool = False,
         use_ray_pose: bool = False,
         ref_view_strategy: str = "saddle_balanced",
+        save_specificity_opts: dict | None = None,
     ) -> dict[str, torch.Tensor]:
         """Run model forward pass."""
         device = imgs.device
@@ -546,7 +549,7 @@ class DepthAnything3(nn.Module, PyTorchModelHubMixin):
             torch.cuda.synchronize(device)
         start_time = time.time()
         feat_layers = list(export_feat_layers) if export_feat_layers is not None else None
-        output = self.forward(imgs, ex_t, in_t, feat_layers, infer_gs, use_ray_pose, ref_view_strategy)
+        output = self.forward(imgs, ex_t, in_t, feat_layers, infer_gs, use_ray_pose, ref_view_strategy, save_specificity_opts)
         if need_sync:
             torch.cuda.synchronize(device)
         end_time = time.time()

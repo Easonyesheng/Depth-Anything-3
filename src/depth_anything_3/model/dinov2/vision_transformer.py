@@ -15,7 +15,8 @@ import torch.nn as nn
 import torch.utils.checkpoint
 from einops import rearrange
 
-from depth_anything_3.utils.logger import logger
+from loguru import logger
+# from depth_anything_3.utils.logger import logger
 
 from .layers import LayerScale  # noqa: F401
 from .layers import Mlp  # noqa: F401
@@ -300,6 +301,9 @@ class DinoVisionTransformer(nn.Module):
     def _get_intermediate_layers_not_chunked(self, x, n=1, export_feat_layers=[], **kwargs):
         B, S, _, H, W = x.shape
         x = self.prepare_tokens_with_masks(x)
+        # x shape: [B, S, N, C]
+        _, _, n_tokens, _ = x.shape
+
         output, total_block_len, aux_output = [], len(self.blocks), []
         blocks_to_take = range(total_block_len - n, total_block_len) if isinstance(n, int) else n
         pos, pos_nodiff = self._prepare_rope(B, S, H, W, x.device)
@@ -314,7 +318,7 @@ class DinoVisionTransformer(nn.Module):
             if self.alt_start != -1 and (i == self.alt_start - 1) and x.shape[1] >= THRESH_FOR_REF_SELECTION and kwargs.get("cam_token", None) is None:
                 # Select reference view using configured strategy
                 strategy = kwargs.get("ref_view_strategy", "saddle_balanced")
-                logger.info(f"Selecting reference view using strategy: {strategy}")
+                logger.debug(f"Selecting reference view using strategy: {strategy}")
                 b_idx = select_reference_view(x, strategy=strategy)
                 # Reorder views to place reference view first
                 x = reorder_by_reference(x, b_idx)
@@ -330,12 +334,21 @@ class DinoVisionTransformer(nn.Module):
                     cam_token = torch.cat([ref_token, src_token], dim=1)
                 x[:, :, 0] = cam_token
 
+            current_layer_opts = None
+            if kwargs.get('save_specificity_opts') is not None:
+                current_layer_opts = kwargs.get('save_specificity_opts').copy()
+                current_layer_opts['layer_id'] = i
+                current_layer_opts.setdefault('patch_start_index', 1 + self.num_register_tokens)
+                current_layer_opts['num_views'] = S
+                current_layer_opts['tokens_per_view'] = n_tokens
+                current_layer_opts['attn_type'] = "global" if (self.alt_start != -1 and i >= self.alt_start and i % 2 == 1) else "local"
+
             if self.alt_start != -1 and i >= self.alt_start and i % 2 == 1:
                 x = self.process_attention(
-                    x, blk, "global", pos=g_pos, attn_mask=kwargs.get("attn_mask", None)
+                    x, blk, "global", pos=g_pos, attn_mask=kwargs.get("attn_mask", None), save_specificity_opts=current_layer_opts
                 )
             else:
-                x = self.process_attention(x, blk, "local", pos=l_pos)
+                x = self.process_attention(x, blk, "local", pos=l_pos, save_specificity_opts=None)
                 local_x = x
 
             if i in blocks_to_take:
@@ -348,7 +361,7 @@ class DinoVisionTransformer(nn.Module):
                 aux_output.append(x)
         return output, aux_output
 
-    def process_attention(self, x, block, attn_type="global", pos=None, attn_mask=None):
+    def process_attention(self, x, block, attn_type="global", pos=None, attn_mask=None, save_specificity_opts: dict = None):
         b, s, n = x.shape[:3]
         if attn_type == "local":
             x = rearrange(x, "b s n c -> (b s) n c")
@@ -361,7 +374,7 @@ class DinoVisionTransformer(nn.Module):
         else:
             raise ValueError(f"Invalid attention type: {attn_type}")
 
-        x = block(x, pos=pos, attn_mask=attn_mask)
+        x = block(x, pos=pos, attn_mask=attn_mask, save_specificity_opts=save_specificity_opts)
 
         if attn_type == "local":
             x = rearrange(x, "(b s) n c -> b s n c", b=b, s=s)
