@@ -159,10 +159,13 @@ class Attention(nn.Module):
             specificity = -score 
             
             # Select top k
+            # Current filtering only uses top_k; threshold is not applied in this implementation.
             k_val = min(top_k, specificity.shape[1])
             _, topk_indices = torch.topk(specificity, k=k_val, dim=-1) # [B, K]
             
             # Recover indices
+            # view_indices is the per-token view id within the current sequence (0..num_views-1)
+            # It tells which image/view the selected token came from, not a global dataset index.
             patches_per_view = tokens_per_view - patch_start_index
             view_indices = topk_indices // patches_per_view
             patch_indices = topk_indices % patches_per_view # Relative to patch start
@@ -181,12 +184,13 @@ class Attention(nn.Module):
             
             # Prepare saving
             to_save = {
-                "tokens": selected_tokens.detach().cpu().numpy(),
+                "tokens": selected_tokens.detach().float().cpu().numpy(),
                 "view_indices": view_indices.detach().cpu().numpy(),
                 "patch_indices": patch_indices.detach().cpu().numpy(), # Relative to patch start (0-based for image patch)
-                "scores": torch.gather(specificity, 1, topk_indices).detach().cpu().numpy()
+                "scores": torch.gather(specificity, 1, topk_indices).detach().float().cpu().numpy()
             }
-        else:
+        else: # not work
+            assert None, "Specificity calculation currently only supports 'global' attention with multiple views."
             k_patches = k[:, :, patch_start_index:, :] # [B, H, N_p, D_h]
             
             # Normalize keys
@@ -220,9 +224,9 @@ class Attention(nn.Module):
             )
 
             to_save = {
-                "tokens": selected_tokens.detach().cpu().numpy(),
+                "tokens": selected_tokens.detach().float().cpu().numpy(),
                 "indices": topk_indices.detach().cpu().numpy(), # Indices within the patch set
-                "scores": torch.gather(specificity, 1, topk_indices).detach().cpu().numpy()
+                "scores": torch.gather(specificity, 1, topk_indices).detach().float().cpu().numpy()
             }
             
         # Move to CPU for saving
@@ -230,7 +234,7 @@ class Attention(nn.Module):
         
         batch_index = opts.get('batch_index', None)
         if batch_index is not None:
-             filename = f"layer_{layer_id}_batch_{batch_index}.npy"
+             filename = f"layer_{layer_id}_seq_{batch_index}.npy"
              
         full_path = os.path.join(save_path, filename)
         os.makedirs(save_path, exist_ok=True)

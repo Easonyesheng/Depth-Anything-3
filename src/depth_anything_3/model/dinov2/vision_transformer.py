@@ -262,7 +262,7 @@ class DinoVisionTransformer(nn.Module):
     def prepare_tokens_with_masks(self, x, masks=None, cls_token=None, **kwargs):
         B, S, nc, w, h = x.shape
         x = rearrange(x, "b s c h w -> (b s) c h w")
-        x = self.patch_embed(x)
+        x = self.patch_embed(x) # TODO: maybe the where the saved map token can be injected
         if masks is not None:
             x = torch.where(masks.unsqueeze(-1), self.mask_token.to(x.dtype).unsqueeze(0), x)
         cls_token = self.prepare_cls_token(B, S)
@@ -317,7 +317,8 @@ class DinoVisionTransformer(nn.Module):
 
             if self.alt_start != -1 and (i == self.alt_start - 1) and x.shape[1] >= THRESH_FOR_REF_SELECTION and kwargs.get("cam_token", None) is None:
                 # Select reference view using configured strategy
-                strategy = kwargs.get("ref_view_strategy", "saddle_balanced")
+                # strategy = kwargs.get("ref_view_strategy", "saddle_balanced")
+                strategy = kwargs.get("ref_view_strategy", "first")
                 logger.debug(f"Selecting reference view using strategy: {strategy}")
                 b_idx = select_reference_view(x, strategy=strategy)
                 # Reorder views to place reference view first
@@ -337,11 +338,15 @@ class DinoVisionTransformer(nn.Module):
             current_layer_opts = None
             if kwargs.get('save_specificity_opts') is not None:
                 current_layer_opts = kwargs.get('save_specificity_opts').copy()
-                current_layer_opts['layer_id'] = i
-                current_layer_opts.setdefault('patch_start_index', 1 + self.num_register_tokens)
-                current_layer_opts['num_views'] = S
-                current_layer_opts['tokens_per_view'] = n_tokens
-                current_layer_opts['attn_type'] = "global" if (self.alt_start != -1 and i >= self.alt_start and i % 2 == 1) else "local"
+                layer_indices = current_layer_opts.get('layer_indices')
+                if layer_indices is not None and i not in layer_indices:
+                    current_layer_opts = None
+                else:
+                    current_layer_opts['layer_id'] = i
+                    current_layer_opts.setdefault('patch_start_index', 1 + self.num_register_tokens)
+                    current_layer_opts['num_views'] = S
+                    current_layer_opts['tokens_per_view'] = n_tokens
+                    current_layer_opts['attn_type'] = "global" if (self.alt_start != -1 and i >= self.alt_start and i % 2 == 1) else "local"
 
             if self.alt_start != -1 and i >= self.alt_start and i % 2 == 1:
                 x = self.process_attention(
