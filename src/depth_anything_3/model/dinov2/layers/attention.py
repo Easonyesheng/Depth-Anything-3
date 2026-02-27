@@ -108,7 +108,7 @@ class Attention(nn.Module):
         x = self.proj_drop(x)
         return x
 
-    def _save_specificity(self, x: Tensor, k: Tensor, opts: dict) -> None:
+    def _save_specificity_by_key(self, x: Tensor, k: Tensor, opts: dict) -> None:
         save_path = opts.get('save_path')
         if not save_path:
             logger.warning("Specificity save path not provided, skipping save.")
@@ -181,52 +181,57 @@ class Attention(nn.Module):
                 1, 
                 original_indices.unsqueeze(-1).expand(-1, -1, C_dim)
             )
+
+            # Flatten tokens to B x D for saving
+            _D = selected_tokens.shape[2]
+            tokens_to_save = selected_tokens.reshape(-1, _D)
             
             # Prepare saving
             to_save = {
-                "tokens": selected_tokens.detach().float().cpu().numpy(),
+                "tokens": tokens_to_save.detach().float().cpu().numpy(),
                 "view_indices": view_indices.detach().cpu().numpy(),
                 "patch_indices": patch_indices.detach().cpu().numpy(), # Relative to patch start (0-based for image patch)
                 "scores": torch.gather(specificity, 1, topk_indices).detach().float().cpu().numpy()
             }
-        else: # not work
-            assert None, "Specificity calculation currently only supports 'global' attention with multiple views."
+        else:
+            # Local / single-view attention path mirrors the global save format
             k_patches = k[:, :, patch_start_index:, :] # [B, H, N_p, D_h]
-            
-            # Normalize keys
+
+            # Normalize keys then compute cosine similarity to the per-head mean key
             k_norm = F.normalize(k_patches, dim=-1)
-            
-            # Mean key across patches
             mean_k = k_norm.mean(dim=2, keepdim=True) # [B, H, 1, D_h]
-            
-            # Cosine similarity
             similarity = (k_norm * mean_k).sum(dim=-1) # [B, H, N_p]
-            
-            # Average similarity across heads
+
+            # Average similarity across heads and invert to get specificity
             score = similarity.mean(dim=1) # [B, N_p]
-            
-            # Specificity is negative similarity. Smallest sim = "most special"
-            specificity = -score 
-            
-            # Select top k
+            specificity = -score
+
+            # Select top-k most specific patches
             k_val = min(top_k, specificity.shape[1])
             _, topk_indices = torch.topk(specificity, k=k_val, dim=-1) # [B, K]
-            
-            # Map indices back to x space
+
+            # Gather tokens from the input/output tensor aligned with patch indices
             x_patches = x[:, patch_start_index:, :] # [B, N_p, C]
-            B_dim, N_p, C_dim = x_patches.shape
-            
-            # Gather tokens
+            B_dim, _, C_dim = x_patches.shape
             selected_tokens = torch.gather(
-                x_patches, 
-                1, 
+                x_patches,
+                1,
                 topk_indices.unsqueeze(-1).expand(-1, -1, C_dim)
             )
 
+            # Flatten tokens to B x D for saving
+            _D = selected_tokens.shape[2]
+            tokens_to_save = selected_tokens.reshape(-1, _D)
+
+            # Align keys with global format fields for downstream consumers
+            patch_indices = topk_indices
+            view_indices = torch.zeros_like(patch_indices) # single-view placeholder
+
             to_save = {
-                "tokens": selected_tokens.detach().float().cpu().numpy(),
-                "indices": topk_indices.detach().cpu().numpy(), # Indices within the patch set
-                "scores": torch.gather(specificity, 1, topk_indices).detach().float().cpu().numpy()
+                "tokens": tokens_to_save.detach().float().cpu().numpy(),
+                "view_indices": view_indices.detach().cpu().numpy(),
+                "patch_indices": patch_indices.detach().cpu().numpy(),
+                "scores": torch.gather(specificity, 1, topk_indices).detach().float().cpu().numpy(),
             }
             
         # Move to CPU for saving
@@ -239,4 +244,124 @@ class Attention(nn.Module):
         full_path = os.path.join(save_path, filename)
         os.makedirs(save_path, exist_ok=True)
         
+        total_candidates = specificity.shape[1] if 'specificity' in locals() else -1
+        logger.debug(
+            f"[specificity] layer={layer_id} attn={attn_type} select_topk={k_val}/{total_candidates} "
+            f"tokens_shape={to_save['tokens'].shape} save_path={full_path}"
+        )
+
+        np.save(full_path, to_save)
+
+    def _save_specificity(self, x: Tensor, k: Tensor, opts: dict) -> None:
+        """Specificity based on token features x (no dependence on k)."""
+        save_path = opts.get('save_path')
+        if not save_path:
+            logger.warning("Specificity save path not provided, skipping save.")
+            return
+
+        layer_id = opts.get('layer_id', -1)
+        top_k = opts.get('top_k', 10)
+        patch_start_index = opts.get('patch_start_index', 1)
+
+        attn_type = opts.get('attn_type', 'local')
+        num_views = opts.get('num_views', 1)
+        tokens_per_view = opts.get('tokens_per_view', x.shape[1])
+
+        # Deep copy x for safety, then compute similarity over flattened tokens (batch collapsed)
+        x_tokens = x.clone()
+        B, N, C = x_tokens.shape
+
+        if attn_type == 'global' and num_views > 1:
+            try:
+                x_view = x_tokens.view(B, num_views, tokens_per_view, C)
+            except Exception as e:
+                logger.error(f"Failed to reshape x for specificity: {e}")
+                return
+
+            # Drop special tokens per view
+            x_patches = x_view[:, :, patch_start_index:, :]  # [B, S, N_p, C]
+            x_flat = x_patches.reshape(1, -1, C)  # collapse batch+views -> [1, B*S*N_p, C]
+
+            x_norm = F.normalize(x_flat, dim=-1)
+            mean_x = x_norm.mean(dim=1, keepdim=True)  # [1, 1, C]
+            similarity = (x_norm * mean_x).sum(dim=-1)  # [1, B*S*N_p]
+            specificity = -similarity
+
+            total_patches_per_sample = num_views * (tokens_per_view - patch_start_index)
+            k_val = min(top_k, specificity.shape[1])
+            _, topk_indices = torch.topk(specificity, k=k_val, dim=-1)  # [1, K]
+            flat_idx = topk_indices.squeeze(0)  # [K]
+
+            batch_indices = flat_idx // total_patches_per_sample
+            rem = flat_idx % total_patches_per_sample
+            view_indices = rem // (tokens_per_view - patch_start_index)
+            patch_indices = rem % (tokens_per_view - patch_start_index)
+
+            original_indices = (view_indices * tokens_per_view) + (patch_start_index + patch_indices)
+
+            selected_tokens = x_tokens[batch_indices, original_indices, :]  # [K, C]
+
+            tokens_to_save = selected_tokens.reshape(-1, C)
+
+            scores = specificity.view(-1)[flat_idx]
+
+            to_save = {
+                "tokens": tokens_to_save.detach().float().cpu().numpy(),
+                "batch_indices": batch_indices.detach().cpu().numpy(),
+                "view_indices": view_indices.detach().cpu().numpy(),
+                "patch_indices": patch_indices.detach().cpu().numpy(),
+                "scores": scores.detach().float().cpu().numpy(),
+            }
+        else:
+            x_patches = x_tokens[:, patch_start_index:, :]  # [B, N_p, C]
+            x_flat = x_patches.reshape(1, -1, C)  # collapse batch -> [1, B*N_p, C]
+
+            x_norm = F.normalize(x_flat, dim=-1)
+            mean_x = x_norm.mean(dim=1, keepdim=True)  # [1, 1, C]
+            similarity = (x_norm * mean_x).sum(dim=-1)  # [1, B*N_p]
+            specificity = -similarity
+
+            tokens_per_sample = tokens_per_view - patch_start_index
+            k_val = min(top_k, specificity.shape[1])
+            _, topk_indices = torch.topk(specificity, k=k_val, dim=-1)  # [1, K]
+            flat_idx = topk_indices.squeeze(0)  # [K]
+
+            batch_indices = flat_idx // tokens_per_sample
+            patch_indices = flat_idx % tokens_per_sample
+            original_indices = patch_start_index + patch_indices
+
+            selected_tokens = x_tokens[batch_indices, original_indices, :]  # [K, C]
+
+            tokens_to_save = selected_tokens.reshape(-1, C)
+
+            scores = specificity.view(-1)[flat_idx]
+
+            view_indices = torch.zeros_like(patch_indices)
+
+            to_save = {
+                "tokens": tokens_to_save.detach().float().cpu().numpy(),
+                "batch_indices": batch_indices.detach().cpu().numpy(),
+                "view_indices": view_indices.detach().cpu().numpy(),
+                "patch_indices": patch_indices.detach().cpu().numpy(),
+                "scores": scores.detach().float().cpu().numpy(),
+            }
+
+        filename = f"layer_{layer_id}.npy"
+        batch_index = opts.get('batch_index', None)
+        if batch_index is not None:
+            filename = f"layer_{layer_id}_seq_{batch_index}.npy"
+
+        full_path = os.path.join(save_path, filename)
+        os.makedirs(save_path, exist_ok=True)
+
+        total_candidates = specificity.shape[1] if 'specificity' in locals() else -1
+        logger.debug(
+            f"[specificity] layer={layer_id} attn={attn_type} select_topk={k_val}/{total_candidates} \n"
+            f"tokens_shape={to_save['tokens'].shape} save_path={full_path}\n"
+            f"batch_indices={to_save['batch_indices'].shape}\n"
+            f"view_indices={to_save['view_indices'].shape}\n"
+            f"patch_indices={to_save['patch_indices'].shape}\n"
+            f"scores={to_save['scores'].shape}"
+        )
+
         np.save(full_path, to_save)

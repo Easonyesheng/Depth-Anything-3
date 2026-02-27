@@ -353,7 +353,7 @@ class DinoVisionTransformer(nn.Module):
                     x, blk, "global", pos=g_pos, attn_mask=kwargs.get("attn_mask", None), save_specificity_opts=current_layer_opts
                 )
             else:
-                x = self.process_attention(x, blk, "local", pos=l_pos, save_specificity_opts=None)
+                x = self.process_attention(x, blk, "local", pos=l_pos, save_specificity_opts=current_layer_opts)
                 local_x = x
 
             if i in blocks_to_take:
@@ -378,6 +378,12 @@ class DinoVisionTransformer(nn.Module):
                 pos = rearrange(pos, "b s n c -> b (s n) c")
         else:
             raise ValueError(f"Invalid attention type: {attn_type}")
+
+        if save_specificity_opts is not None:
+            logger.debug(
+                f"Saving specificity: layer {save_specificity_opts.get('layer_id', -1)} | "
+                f"type={attn_type}"
+            )
 
         x = block(x, pos=pos, attn_mask=attn_mask, save_specificity_opts=save_specificity_opts)
 
