@@ -266,6 +266,7 @@ class Attention(nn.Module):
         attn_type = opts.get('attn_type', 'local')
         num_views = opts.get('num_views', 1)
         tokens_per_view = opts.get('tokens_per_view', x.shape[1])
+        prev_local_tokens = opts.get('prev_local_tokens', None)
 
         # Deep copy x for safety, then compute similarity over flattened tokens (batch collapsed)
         x_tokens = x.clone()
@@ -305,6 +306,22 @@ class Attention(nn.Module):
 
             scores = specificity.view(-1)[flat_idx]
 
+            local_tokens = None
+            concat_tokens = None
+            if prev_local_tokens is not None:
+                try:
+                    if prev_local_tokens.dim() == 4 and prev_local_tokens.shape[:3] == (B, num_views, tokens_per_view):
+                        local_indices = patch_start_index + patch_indices
+                        local_tokens = prev_local_tokens[batch_indices, view_indices, local_indices, :]
+                        concat_tokens = torch.cat([local_tokens, selected_tokens], dim=-1)
+                    else:
+                        logger.warning(
+                            "prev_local_tokens shape mismatch, skip concat: expected (B,S,N,C)="
+                            f"({B},{num_views},{tokens_per_view},C) got {tuple(prev_local_tokens.shape)}"
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to gather local tokens for concat: {e}")
+
             to_save = {
                 "tokens": tokens_to_save.detach().float().cpu().numpy(),
                 "batch_indices": batch_indices.detach().cpu().numpy(),
@@ -312,6 +329,10 @@ class Attention(nn.Module):
                 "patch_indices": patch_indices.detach().cpu().numpy(),
                 "scores": scores.detach().float().cpu().numpy(),
             }
+            if local_tokens is not None:
+                to_save["local_tokens"] = local_tokens.detach().float().cpu().numpy()
+            if concat_tokens is not None:
+                to_save["concat_tokens"] = concat_tokens.detach().float().cpu().numpy()
         else:
             x_patches = x_tokens[:, patch_start_index:, :]  # [B, N_p, C]
             x_flat = x_patches.reshape(1, -1, C)  # collapse batch -> [1, B*N_p, C]

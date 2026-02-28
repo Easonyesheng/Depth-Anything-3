@@ -307,6 +307,7 @@ class DinoVisionTransformer(nn.Module):
         output, total_block_len, aux_output = [], len(self.blocks), []
         blocks_to_take = range(total_block_len - n, total_block_len) if isinstance(n, int) else n
         pos, pos_nodiff = self._prepare_rope(B, S, H, W, x.device)
+        last_local_tokens = None  # cache previous local attention output for global pairing
 
         for i, blk in enumerate(self.blocks):
             if i < self.rope_start or self.rope is None:
@@ -347,6 +348,12 @@ class DinoVisionTransformer(nn.Module):
                     current_layer_opts['num_views'] = S
                     current_layer_opts['tokens_per_view'] = n_tokens
                     current_layer_opts['attn_type'] = "global" if (self.alt_start != -1 and i >= self.alt_start and i % 2 == 1) else "local"
+                    save_corr_local_flag = current_layer_opts.get('save_corr_local_flag', False)
+                    if save_corr_local_flag:
+                        assert current_layer_opts['attn_type'] == "global", "save_corr_local_flag requires only global layers (odd indices >= alt_start)."
+                    if save_corr_local_flag and current_layer_opts['attn_type'] == "global" and last_local_tokens is not None:
+                        # Pass previous local attention output to pair and concatenate with current global tokens
+                        current_layer_opts['prev_local_tokens'] = last_local_tokens
 
             if self.alt_start != -1 and i >= self.alt_start and i % 2 == 1:
                 x = self.process_attention(
@@ -355,6 +362,7 @@ class DinoVisionTransformer(nn.Module):
             else:
                 x = self.process_attention(x, blk, "local", pos=l_pos, save_specificity_opts=current_layer_opts)
                 local_x = x
+                last_local_tokens = local_x.detach()
 
             if i in blocks_to_take:
                 out_x = torch.cat([local_x, x], dim=-1) if self.cat_token else x
