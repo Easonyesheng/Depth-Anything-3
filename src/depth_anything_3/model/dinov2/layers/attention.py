@@ -329,10 +329,10 @@ class Attention(nn.Module):
                 "patch_indices": patch_indices.detach().cpu().numpy(),
                 "scores": scores.detach().float().cpu().numpy(),
             }
-            if local_tokens is not None:
-                to_save["local_tokens"] = local_tokens.detach().float().cpu().numpy()
+            # if local_tokens is not None:
+            #     to_save["local_tokens"] = local_tokens.detach().float().cpu().numpy()
             if concat_tokens is not None:
-                to_save["concat_tokens"] = concat_tokens.detach().float().cpu().numpy()
+                to_save["tokens"] = concat_tokens.detach().float().cpu().numpy()
         else:
             x_patches = x_tokens[:, patch_start_index:, :]  # [B, N_p, C]
             x_flat = x_patches.reshape(1, -1, C)  # collapse batch -> [1, B*N_p, C]

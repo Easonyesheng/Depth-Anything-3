@@ -339,6 +339,7 @@ class DinoVisionTransformer(nn.Module):
             current_layer_opts = None
             if kwargs.get('save_specificity_opts') is not None:
                 current_layer_opts = kwargs.get('save_specificity_opts').copy()
+                logger.debug(f"Current layer opts before layer-specific filtering: {current_layer_opts}")
                 layer_indices = current_layer_opts.get('layer_indices')
                 if layer_indices is not None and i not in layer_indices:
                     current_layer_opts = None
@@ -354,6 +355,11 @@ class DinoVisionTransformer(nn.Module):
                     if save_corr_local_flag and current_layer_opts['attn_type'] == "global" and last_local_tokens is not None:
                         # Pass previous local attention output to pair and concatenate with current global tokens
                         current_layer_opts['prev_local_tokens'] = last_local_tokens
+                        logger.success("Saving correlation with local tokens for global attention layer.")
+                    elif save_corr_local_flag:
+                        logger.warning(
+                            f"save_corr_local_flag is set but current layer is {current_layer_opts['attn_type']} and last_local_tokens is {last_local_tokens.shape if last_local_tokens is not None else None}. This may lead to issues in specificity saving."
+                        )
 
             if self.alt_start != -1 and i >= self.alt_start and i % 2 == 1:
                 x = self.process_attention(
