@@ -12,8 +12,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import annotations
+
 from types import SimpleNamespace
-from typing import Optional
+from typing import Optional, Tuple
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -244,9 +246,9 @@ def standardize_quaternion(quaternions: torch.Tensor) -> torch.Tensor:
 
 
 def sample_image_grid(
-    shape: tuple[int, ...],
+    shape: Tuple[int, ...],
     device: torch.device = torch.device("cpu"),
-) -> tuple[
+) -> Tuple[
     torch.Tensor,  # float coordinates (xy indexing), "*shape dim"
     torch.Tensor,  # integer indices (ij indexing), "*shape dim"
 ]:
@@ -319,7 +321,7 @@ def get_world_rays(
     coordinates: torch.Tensor,  # "*#batch dim"
     extrinsics: torch.Tensor,  # "*#batch dim+2 dim+2"
     intrinsics: torch.Tensor,  # "*#batch dim+1 dim+1"
-) -> tuple[
+) -> Tuple[
     torch.Tensor,  # origins, "*batch dim+1"
     torch.Tensor,  # directions, "*batch dim+1"
 ]:
